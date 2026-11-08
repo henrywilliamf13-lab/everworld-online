@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EVERWORLD 3D — Expanded Edition</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;overflow:hidden;font-family:Arial,sans-serif;background:#101d32;color:white}
+canvas{display:block}
+#start{position:fixed;inset:0;background:linear-gradient(135deg,#101d32,#173e55);display:flex;flex-direction:column;justify-content:center;align-items:center;z-index:20;text-align:center;padding:24px}
+#start h1{font-size:clamp(42px,8vw,76px);margin:0 0 8px}
+#start p{max-width:650px;line-height:1.5;color:#d8e8f0}
+button,select{font:inherit;border:0;border-radius:9px;padding:10px 13px;cursor:pointer}
+button{background:#36d6b0;color:#06251e;font-weight:bold}
+button:hover{filter:brightness(1.08)}
+#start button{padding:16px 32px;font-size:20px;margin:12px}
+#hud{position:fixed;top:12px;left:12px;z-index:5;background:#071522d9;padding:12px 14px;border-radius:12px;line-height:1.55;min-width:190px;pointer-events:none}
+#side{position:fixed;top:12px;right:12px;z-index:6;width:205px;background:#071522e8;padding:12px;border-radius:14px;display:none;max-height:calc(100vh - 24px);overflow:auto}
+#side h3{margin:3px 0 10px}
+#side button{width:100%;margin:4px 0;text-align:left;background:#203c51;color:white}
+#side button.active{background:#36d6b0;color:#06251e}
+#side .small{font-size:12px;color:#c5d5df;line-height:1.4;margin:8px 2px}
+#side select{width:100%;margin:5px 0;background:#e9f1f5}
+#notice{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);z-index:8;background:#071522e8;padding:10px 16px;border-radius:10px;max-width:90vw;text-align:center;display:none}
+#help{position:fixed;bottom:12px;left:12px;z-index:5;background:#071522c9;padding:9px 12px;border-radius:10px;font-size:12px;line-height:1.5;pointer-events:none}
+#crosshair{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:4;color:white;font-size:20px;pointer-events:none;display:none}
+#vehicleLabel{color:#ffe08a}
+@media(max-width:700px){#side{width:165px;font-size:13px}#hud{font-size:12px;min-width:145px}#help{max-width:48vw}}
+</style>
+</head>
+<body>
+<div id="start">
+ <h1>🌎 EVERWORLD</h1>
+ <h2>YOUR WORLD. YOUR ADVENTURE.</h2>
+ <p>Explore a growing 3D world with forests, a city, mountains, a beach, houses, animals, vehicles and creative building.</p>
+ <button id="enterButton">ENTER WORLD</button>
+ <p>WASD to move · Mouse to look · Space to jump · Shift to run</p>
+</div>
+<div id="hud"><b>🌎 EVERWORLD</b><br>Area: <span id="area">Green Valley</span><br>Mode: <span id="modeName">Explore</span><br>Position: <span id="position">0, 0</span><br>Status: <span id="status">On foot</span></div>
+<div id="side">
+ <h3>WORLD MENU</h3>
+ <button data-mode="Explore" class="active">🌎 Explore</button>
+ <button data-mode="Houses">🏠 Houses</button>
+ <button data-mode="Animals">🐾 Animals</button>
+ <button data-mode="Build">🧱 Building</button>
+ <button data-mode="Vehicles">🚙 Vehicles</button>
+ <button data-mode="Multiplayer">👥 Multiplayer</button>
+ <div id="modeHelp" class="small">Explore the world freely.</div>
+ <div id="buildTools" style="display:none">
+  <label class="small" for="blockType">Block material</label>
+  <select id="blockType"><option value="0x36b36b">Grass</option><option value="0xb87945">Wood</option><option value="0x9ba7b0">Stone</option><option value="0x3288d8">Blue</option><option value="0xe8c547">Gold</option><option value="0xd85c65">Red</option></select>
+  <div class="small">Left click: place block · Right click: remove block</div>
+ </div>
+ <div id="multiInfo" class="small" style="display:none">
+  <label for="playerName">Your player name</label>
+  <input id="playerName" maxlength="18" placeholder="Choose a nickname" style="width:100%;padding:8px;border-radius:7px;border:0;margin:4px 0 8px">
+  <label for="roomCode">Private room code</label>
+  <input id="roomCode" maxlength="24" placeholder="Make a room code" style="width:100%;padding:8px;border-radius:7px;border:0;margin:4px 0 8px;text-transform:uppercase">
+  <button id="joinOnline" style="background:#36d6b0;color:#06251e">🌐 Join online room</button>
+  <div id="onlineStatus" class="small">Not connected</div>
+  <div class="small">Give friends the same room code.</div>
+  <div id="chatLog" style="height:105px;overflow:auto;background:#09131d;padding:6px;border-radius:7px;font-size:12px;margin:6px 0"></div>
+  <input id="chatInput" maxlength="180" placeholder="Write a chat message" style="width:100%;padding:8px;border:0;border-radius:7px;margin-bottom:5px">
+  <button id="sendChat" style="background:#36d6b0;color:#06251e">Send chat</button>
+ </div>
+ <button id="exitVehicle" style="display:none">🚶 Exit vehicle (E)</button>
+ <button id="unlockButton">🖱️ Release mouse</button>
+</div>
+<div id="help">WASD: move · Mouse: look · Space: jump · Shift: run<br>E: enter/exit nearby house or vehicle · Esc: release mouse</div>
+<div id="crosshair">+</div>
+<div id="notice"></div>
+<script src="/socket.io/socket.io.js"></script>
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x87ceeb);
+scene.fog=new THREE.Fog(0x87ceeb,110,390);
+const camera=new THREE.PerspectiveCamera(75,innerWidth/innerHeight,.1,1200);
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth,innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.shadowMap.enabled=true;
+renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
+scene.add(new THREE.HemisphereLight(0xffffff,0x52613c,2));
+const sun=new THREE.DirectionalLight(0xffffff,2);
+sun.position.set(50,100,50);sun.castShadow=true;scene.add(sun);
+const mat=c=>new THREE.MeshStandardMaterial({color:c});
+const grass=mat(0x55a747),wood=mat(0x79502e),leaves=mat(0x247c38),stone=mat(0x777777),sand=mat(0xe5ce8a);
+const floor=new THREE.Mesh(new THREE.PlaneGeometry(500,500),grass);floor.rotation.x=-Math.PI/2;floor.receiveShadow=true;scene.add(floor);
+const ocean=new THREE.Mesh(new THREE.PlaneGeometry(1000,1000),mat(0x168fc4));ocean.rotation.x=-Math.PI/2;ocean.position.set(0,-1,-300);scene.add(ocean);
+const beach=new THREE.Mesh(new THREE.CircleGeometry(50,64),sand);beach.rotation.x=-Math.PI/2;beach.position.set(100,0,100);scene.add(beach);
+
+function addBox(w,h,d,material,x,y,z,parent=scene){const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),material);m.position.set(x,y,z);m.castShadow=true;m.receiveShadow=true;parent.add(m);return m;}
+function tree(x,z){const trunk=new THREE.Mesh(new THREE.CylinderGeometry(.4,.6,4,8),wood);trunk.position.set(x,2,z);trunk.castShadow=true;scene.add(trunk);const crown=new THREE.Mesh(new THREE.ConeGeometry(3,7,8),leaves);crown.position.set(x,6,z);crown.castShadow=true;scene.add(crown);}
+for(let i=0;i<180;i++){let x=(Math.random()-.5)*400,z=(Math.random()-.5)*400;if(Math.hypot(x,z)>30)tree(x,z);}
+for(let i=0;i<15;i++){const m=new THREE.Mesh(new THREE.ConeGeometry(15+Math.random()*15,30+Math.random()*30,7),stone);m.position.set(-150+i*20,15,-180);m.castShadow=true;scene.add(m);}
+for(let i=0;i<30;i++){const h=8+Math.random()*25;addBox(8,h,8,mat([0x9caebd,0xd2a878,0x7899b0,0xb8c6d2][i%4]),50+(i%6)*13,h/2,-40+Math.floor(i/6)*18);}
+
+// Houses: shell walls with a real walk-through doorway and visible interior.
+const houses=[];
+function makeHouse(x,z,color=0xd7b987){
+ const g=new THREE.Group();scene.add(g);
+ const wall=mat(color),roof=mat(0x8d4938),doorMat=mat(0x55351f),glass= new THREE.MeshStandardMaterial({color:0x8bd7ed,transparent:true,opacity:.65});
+ addBox(12,7,.6,wall,0,3.5,-6,g);addBox(.6,7,12,wall,-6,3,0,g);addBox(.6,7,12,wall,6,3,0,g);
+ addBox(4,7,.6,wall,-4,3.5,6,g);addBox(4,7,.6,wall,4,3.5,6,g);
+ addBox(4,3,.6,wall,0,5.5,6,g); // lintel above doorway
+ const r=new THREE.Mesh(new THREE.ConeGeometry(9,5,4),roof);r.rotation.y=Math.PI/4;r.position.set(0,9,0);g.add(r);
+ addBox(3,4,.25,doorMat,0,2,6.15,g);
+ addBox(2,1.5,.12,glass,-4,4,-6.34,g);addBox(2,1.5,.12,glass,4,4,-6.34,g);
+ addBox(2,.35,1.5,wood,-3,.2,0,g);addBox(1.2,.8,.8,mat(0x4774a1),3,.4,-2,g);
+ g.position.set(x,0,z);houses.push({group:g,x,z});return g;
+}
+makeHouse(-18,-12,0xe4c58a);makeHouse(18,-18,0xc9d8df);makeHouse(-35,25,0xd9a1a1);makeHouse(35,28,0xb7d4a0);
+
+// Player
+const player=new THREE.Group();scene.add(player);
+const shirt=mat(0x1689e8),skin=mat(0xffc89c),pants=mat(0x253b65);
+function part(w,h,d,m,x,y,z){return addBox(w,h,d,m,x,y,z,player);}
+part(1.1,1.3,.6,shirt,0,1.8,0);part(.8,.8,.8,skin,0,2.85,0);part(.45,1,.5,pants,-.27,.7,0);part(.45,1,.5,pants,.27,.7,0);part(.35,1,.4,skin,-.75,1.8,0);part(.35,1,.4,skin,.75,1.8,0);
+player.position.set(0,0,0);
+
+// Animals wandering around
+const animals=[];
+function makeAnimal(type,x,z,color){
+ const g=new THREE.Group();scene.add(g);
+ const body=addBox(type==='bird'?1:.9,type==='bird'?.5:.65,type==='bird'?.7:1,mat(color),0,.8,0,g);
+ addBox(.45,.45,.45,mat(color),0,1.25,-.48,g);
+ if(type!=='bird'){addBox(.18,.55,.18,mat(color),-.25,.28,.25,g);addBox(.18,.55,.18,mat(color),.25,.28,.25,g);}
+ else {addBox(1.1,.12,.4,mat(0xf2d36b),-.65,.85,0,g);addBox(1.1,.12,.4,mat(0xf2d36b),.65,.85,0,g);}
+ g.position.set(x,0,z);animals.push({group:g,type,x,z,phase:Math.random()*6});}
+makeAnimal('rabbit',-12,8,0xf1eee7);makeAnimal('dog',-28,10,0x9a6841);makeAnimal('cat',25,8,0x555b68);makeAnimal('deer',-70,20,0xb57a43);makeAnimal('bird',8,-30,0x3e8dd1);makeAnimal('rabbit',-55,-25,0xc9c9c9);makeAnimal('dog',42,35,0xd8bd91);
+
+// A simple drivable car
+const car=new THREE.Group();scene.add(car);car.position.set(48,0,10);
+addBox(4,1,7,mat(0xd84646),0,1,0,car);addBox(3.3,1.2,3.2,mat(0x8bd7ed),0,2,0,car);
+for(const x of [-2.1,2.1])for(const z of [-2.2,2.2]){const w=new THREE.Mesh(new THREE.CylinderGeometry(.65,.65,.35,16),mat(0x20242a));w.rotation.z=Math.PI/2;w.position.set(x,.65,z);car.add(w);}
+let driving=false;
+
+// Build blocks
+const blocks=[];
+const raycaster=new THREE.Raycaster();
+const center=new THREE.Vector2(0,0);
+let buildMaterial=mat(0x36b36b);
+const blockSelect=document.getElementById('blockType');
+blockSelect.addEventListener('change',()=>buildMaterial=mat(Number(blockSelect.value)));
+function buildClick(e){
+ if(currentMode!=='Build'||!locked)return;
+ raycaster.setFromCamera(center,camera);
+ const hits=raycaster.intersectObjects([...blocks,floor],false);
+ if(!hits.length)return;
+ const hit=hits[0];
+ if(e.button===2){const idx=blocks.indexOf(hit.object);if(idx>=0){scene.remove(hit.object);blocks.splice(idx,1);}return;}
+ const p=hit.point.clone().add(hit.face.normal.multiplyScalar(1));
+ const b=addBox(2,2,2,buildMaterial,Math.round(p.x/2)*2,Math.max(1,Math.round(p.y/2)*2),Math.round(p.z/2)*2);
+ blocks.push(b);
+}
+renderer.domElement.addEventListener('mousedown',buildClick);
+renderer.domElement.addEventListener('contextmenu',e=>e.preventDefault());
+
+// Portal and controls
+const portal=new THREE.Mesh(new THREE.TorusGeometry(4,.4,12,40),new THREE.MeshStandardMaterial({color:0x00ffff,emissive:0x0088ff,emissiveIntensity:2}));
+portal.position.set(-35,5,120);scene.add(portal);
+const keys={};let yaw=0,pitch=0,locked=false,velocity=0,grounded=true,currentMode='Explore',noticeTimer=0;
+document.addEventListener('keydown',e=>{keys[e.code]=true;if(e.code==='KeyE')interact();});
+document.addEventListener('keyup',e=>keys[e.code]=false);
+document.addEventListener('pointerlockchange',()=>{locked=document.pointerLockElement===renderer.domElement;document.getElementById('crosshair').style.display=locked?'block':'none';});
+document.addEventListener('mousemove',e=>{if(!locked)return;yaw-=e.movementX*.002;pitch-=e.movementY*.002;pitch=Math.max(-.5,Math.min(.5,pitch));});
+window.startGame=()=>{document.getElementById('start').style.display='none';document.getElementById('side').style.display='block';renderer.domElement.requestPointerLock();};
+document.getElementById('enterButton').addEventListener('click',window.startGame);
+renderer.domElement.addEventListener('click',()=>{if(!locked&&document.getElementById('start').style.display==='none')renderer.domElement.requestPointerLock();});
+document.getElementById('unlockButton').onclick=()=>document.exitPointerLock();
+
+const modeDescriptions={
+ Explore:'Explore freely. Find the city, forest, mountains, beach and portal.',
+ Houses:'Walk up to a house and press E to step inside. The doorway is open.',
+ Animals:'Find the roaming animals. Walk near one and press E to say hello.',
+ Build:'Aim at the ground or a block. Left-click to place; right-click to remove.',
+ Vehicles:'Walk near the red car and press E to drive. Press E again to get out.',
+ Multiplayer:'Join an online room and see real players. Share your room code with friends.'
+};
+function setMode(mode){
+ currentMode=mode;document.getElementById('modeName').textContent=mode;
+ document.getElementById('modeHelp').textContent=modeDescriptions[mode];
+ document.getElementById('buildTools').style.display=mode==='Build'?'block':'none';
+ document.getElementById('multiInfo').style.display=mode==='Multiplayer'?'block':'none';
+ document.querySelectorAll('[data-mode]').forEach(b=>b.classList.toggle('active',b.dataset.mode===mode));
+ if(mode==='Animals')say('Find an animal and press E nearby.');
+ if(mode==='Houses')say('Find a house doorway and press E to enter.');
+ if(mode==='Vehicles')say('Walk over to the red car and press E.');
+ if(mode==='Build')say('Build mode ready! Left-click to place, right-click to remove blocks.');
+}
+document.querySelectorAll('[data-mode]').forEach(b=>b.addEventListener('click',()=>setMode(b.dataset.mode)));
+function say(t){const n=document.getElementById('notice');n.textContent=t;n.style.display='block';clearTimeout(noticeTimer);noticeTimer=setTimeout(()=>n.style.display='none',3000);}
+function interact(){
+ if(driving){driving=false;document.getElementById('status').textContent='On foot';document.getElementById('exitVehicle').style.display='none';player.position.x=car.position.x+5;player.position.z=car.position.z; say('You got out of the car.');return;}
+ const dcar=Math.hypot(player.position.x-car.position.x,player.position.z-car.position.z);
+ if(dcar<9&&currentMode==='Vehicles'){driving=true;document.getElementById('status').textContent='Driving';document.getElementById('exitVehicle').style.display='block';say('You are driving! Use WASD. Press E to exit.');return;}
+ const house=houses.find(h=>Math.hypot(player.position.x-h.x,player.position.z-(h.z+9))<9);
+ if(house&&currentMode==='Houses'){say('Welcome inside! Explore the rooms and furniture.');return;}
+ const animal=animals.find(a=>Math.hypot(player.position.x-a.group.position.x,player.position.z-a.group.position.z)<5);
+ if(animal&&currentMode==='Animals'){say('You greeted the '+animal.type+'!');return;}
+ say('Nothing nearby to interact with. Try another mode or explore.');
+}
+document.getElementById('exitVehicle').onclick=interact;
+document.addEventListener('contextmenu',e=>{if(currentMode==='Build')e.preventDefault();});
+
+
+// REAL ONLINE MULTIPLAYER
+const remotePlayers=new Map();
+let onlineSocket=null,onlineRoom="",onlineName="",networkElapsed=0;
+function makeNameSprite(name){
+ const c=document.createElement('canvas');c.width=256;c.height=64;
+ const ctx=c.getContext('2d');ctx.fillStyle='rgba(5,18,30,.82)';
+ ctx.beginPath();ctx.roundRect(8,8,240,48,14);ctx.fill();
+ ctx.fillStyle='white';ctx.font='bold 25px Arial';ctx.textAlign='center';ctx.textBaseline='middle';
+ ctx.fillText(String(name||'Player').slice(0,18),128,32);
+ const tex=new THREE.CanvasTexture(c);
+ const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,transparent:true}));
+ sp.scale.set(4.2,1.05,1);return sp;
+}
+function createRemotePlayer(d){
+ if(remotePlayers.has(d.id))return;
+ const g=new THREE.Group();
+ addBox(.9,1.25,.55,mat(0x42b7a2),0,1.65,0,g);
+ addBox(.72,.72,.72,mat(0xffc89c),0,2.65,0,g);
+ const label=makeNameSprite(d.username);label.position.y=3.65;g.add(label);
+ scene.add(g);g.position.set(d.x||0,d.y||0,d.z||0);
+ remotePlayers.set(d.id,{group:g,target:{x:d.x||0,y:d.y||0,z:d.z||0,yaw:d.yaw||0}});
+}
+function removeRemotePlayer(id){
+ const p=remotePlayers.get(id);if(!p)return;
+ scene.remove(p.group);p.group.traverse(o=>{
+  if(o.geometry)o.geometry.dispose();
+  if(o.material){if(Array.isArray(o.material))o.material.forEach(m=>m.dispose());else o.material.dispose();}
+ });remotePlayers.delete(id);
+}
+function onlineStatus(t){const e=document.getElementById('onlineStatus');if(e)e.textContent=t;}
+function chatLine(name,msg){
+ const log=document.getElementById('chatLog');const row=document.createElement('div');
+ const b=document.createElement('b');b.textContent=name+': ';row.appendChild(b);
+ row.appendChild(document.createTextNode(msg));log.appendChild(row);log.scrollTop=log.scrollHeight;
+ while(log.children.length>35)log.removeChild(log.firstChild);
+}
+function joinOnlineRoom(){
+ const name=document.getElementById('playerName').value.trim().slice(0,18);
+ const room=document.getElementById('roomCode').value.trim().toUpperCase().replace(/[^A-Z0-9_-]/g,'').slice(0,24);
+ if(!name){say('Choose a nickname first.');return;}
+ if(room.length<4){say('Use a room code with at least 4 letters or numbers.');return;}
+ if(typeof window.io!=='function'){say('Multiplayer library did not load. Refresh while online.');return;}
+ if(onlineSocket)onlineSocket.disconnect();
+ onlineName=name;onlineRoom=room;onlineStatus('Connecting...');
+ onlineSocket=window.io({transports:['websocket','polling']});
+ onlineSocket.on('connect',()=>onlineSocket.emit('room:join',{room,username:name}));
+ onlineSocket.on('connect_error',()=>onlineStatus('Could not connect. Check the server and internet.'));
+ onlineSocket.on('room:joined',d=>{
+  [...remotePlayers.keys()].forEach(removeRemotePlayer);
+  (d.players||[]).forEach(createRemotePlayer);
+  onlineStatus('Connected to '+room+' · '+((d.players||[]).length+1)+' player(s)');
+  chatLine('EVERWORLD','You joined room '+room+'.');
+ });
+ onlineSocket.on('player:joined',d=>{createRemotePlayer(d);chatLine('EVERWORLD',(d.username||'A player')+' joined.');});
+ onlineSocket.on('player:moved',d=>{const p=remotePlayers.get(d.id);if(p)p.target={x:d.x,y:d.y,z:d.z,yaw:d.yaw};});
+ onlineSocket.on('player:left',d=>{removeRemotePlayer(d.id);chatLine('EVERWORLD','A player left.');});
+ onlineSocket.on('chat:message',d=>chatLine(d.username||'Player',d.message||''));
+ onlineSocket.on('disconnect',()=>{onlineStatus('Disconnected');[...remotePlayers.keys()].forEach(removeRemotePlayer);});
+}
+document.getElementById('joinOnline').addEventListener('click',joinOnlineRoom);
+document.getElementById('sendChat').addEventListener('click',()=>{
+ const input=document.getElementById('chatInput'),message=input.value.trim().slice(0,180);
+ if(!message)return;
+ if(!onlineSocket||!onlineSocket.connected){say('Join an online room before chatting.');return;}
+ onlineSocket.emit('chat:send',{message});input.value='';
+});
+document.getElementById('chatInput').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('sendChat').click();});
+window.addEventListener('beforeunload',()=>{if(onlineSocket)onlineSocket.disconnect();});
+
+
+const clock=new THREE.Clock();
+function animate(){
+ requestAnimationFrame(animate);const dt=Math.min(clock.getDelta(),.04);
+ remotePlayers.forEach(p=>{
+  p.group.position.x=THREE.MathUtils.lerp(p.group.position.x,p.target.x,.25);
+  p.group.position.y=THREE.MathUtils.lerp(p.group.position.y,p.target.y,.25);
+  p.group.position.z=THREE.MathUtils.lerp(p.group.position.z,p.target.z,.25);
+  p.group.rotation.y=p.target.yaw||0;
+ });
+ networkElapsed+=dt;
+ if(onlineSocket&&onlineSocket.connected&&networkElapsed>=.066){
+  networkElapsed=0;
+  onlineSocket.emit('player:move',{x:player.position.x,y:player.position.y,z:player.position.z,yaw:player.rotation.y});
+ }
+ let forward=0,sideways=0;if(keys.KeyW)forward++;if(keys.KeyS)forward--;if(keys.KeyD)sideways++;if(keys.KeyA)sideways--;
+ const len=Math.hypot(forward,sideways)||1;forward/=len;sideways/=len;
+ const speed=keys.ShiftLeft?16:9;
+ const dx=(-Math.sin(yaw)*forward+Math.cos(yaw)*sideways)*speed*dt;
+ const dz=(-Math.cos(yaw)*forward-Math.sin(yaw)*sideways)*speed*dt;
+ if(driving){car.position.x+=dx;car.position.z+=dz;car.rotation.y=yaw;player.position.x=car.position.x;player.position.z=car.position.z;}
+ else{player.position.x+=dx;player.position.z+=dz;if(dx||dz)player.rotation.y=Math.atan2(-dx,-dz);
+ if(keys.Space&&grounded){velocity=10;grounded=false;}velocity-=25*dt;player.position.y+=velocity*dt;
+ if(player.position.y<=0){player.position.y=0;velocity=0;grounded=true;}}
+ player.position.x=THREE.MathUtils.clamp(player.position.x,-240,240);player.position.z=THREE.MathUtils.clamp(player.position.z,-240,240);
+ animals.forEach(a=>{a.phase+=dt*.6;a.group.position.x=a.x+Math.sin(a.phase)*2.2;a.group.position.z=a.z+Math.cos(a.phase*.7)*2.2;a.group.rotation.y=Math.sin(a.phase)*.3;});
+
+ const target=new THREE.Vector3(player.position.x,player.position.y+2,player.position.z);
+ const offset=driving?new THREE.Vector3(Math.sin(yaw)*13,6,Math.cos(yaw)*13):new THREE.Vector3(Math.sin(yaw)*10,4-pitch*5,Math.cos(yaw)*10);
+ camera.position.lerp(target.clone().add(offset),.12);camera.lookAt(target);
+ let area='Green Valley';if(player.position.x>35&&player.position.z<70&&player.position.z>-70)area='City';if(player.position.x<-60)area='Forest';if(player.position.z<-150)area='Mountains';if(player.position.x>55&&player.position.z>55)area='Beach';
+ document.getElementById('area').textContent=area;document.getElementById('position').textContent=Math.round(player.position.x)+', '+Math.round(player.position.z);
+ portal.rotation.z+=dt*.5;
+ renderer.render(scene,camera);
+}
+animate();
+window.addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
+</script>
+</body>
+</html>
